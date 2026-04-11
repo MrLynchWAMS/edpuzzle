@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edpuzzle Archive Viewer</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Phosphor Icons for UI graphics -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        edblue: {
+                            50: '#eef4ff',
+                            100: '#d9e6ff',
+                            500: '#3b82f6',
+                            600: '#0058FF', // Edpuzzle primary blue
+                            700: '#0046cc',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        
+        /* Ensure rich text from Edpuzzle questions renders nicely */
+        .edpuzzle-richtext img { max-width: 100%; height: auto; border-radius: 0.375rem; margin-top: 0.5rem; }
+        .edpuzzle-richtext p { margin-bottom: 0.5rem; }
+        .edpuzzle-richtext p:last-child { margin-bottom: 0; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Navigation Bar -->
+    <nav class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center gap-2">
+                    <div class="bg-edblue-600 text-white p-1.5 rounded-lg">
+                        <i class="ph-fill ph-puzzle-piece text-2xl"></i>
+                    </div>
+                    <span class="font-bold text-xl tracking-tight text-gray-900">Archive Viewer</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button id="btn-load-new" class="hidden text-sm font-medium text-gray-600 hover:text-edblue-600 transition-colors">
+                        Load Different File
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow flex flex-col" id="app-container">
+        
+        <!-- VIEW 1: Upload Screen -->
+        <div id="view-upload" class="flex-grow flex items-center justify-center p-6">
+            <div class="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center transition-all hover:shadow-md">
+                <div class="w-16 h-16 bg-edblue-50 text-edblue-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i class="ph ph-upload-simple text-3xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Import Your Data</h2>
+                <p class="text-gray-500 mb-8 text-sm">Select the JSON file exported by your Tampermonkey script to view your video archive offline.</p>
+                
+                <input type="file" id="file-input" accept=".json" class="hidden">
+                <button onclick="document.getElementById('file-input').click()" class="w-full bg-edblue-600 hover:bg-edblue-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2">
+                    <i class="ph ph-folder-open text-xl"></i>
+                    Select JSON File
+                </button>
+                
+                <div id="upload-error" class="hidden mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">
+                    <!-- Error message will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: Dashboard (Grid of Videos) -->
+        <div id="view-dashboard" class="hidden flex-grow flex-col max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">My Content Archive</h1>
+                    <p class="text-gray-500 text-sm mt-1" id="dashboard-stats">Loading stats...</p>
+                </div>
+                <div class="relative w-full sm:w-72">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <input type="text" id="search-input" placeholder="Search videos..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-edblue-500 focus:border-edblue-500">
+                </div>
+            </div>
+
+            <!-- Video Grid -->
+            <div id="video-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- Video Cards injected here by JS -->
+            </div>
+            
+            <div id="no-results" class="hidden text-center py-12">
+                <i class="ph ph-magnifying-glass text-4xl text-gray-300 mb-3"></i>
+                <h3 class="text-lg font-medium text-gray-900">No videos found</h3>
+                <p class="text-gray-500">Try adjusting your search terms.</p>
+            </div>
+        </div>
+
+        <!-- VIEW 3: Video Detail View -->
+        <div id="view-detail" class="hidden flex-grow flex-col max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+            <button id="btn-back" class="w-max flex items-center gap-2 text-gray-600 hover:text-edblue-600 font-medium mb-6 transition-colors">
+                <i class="ph ph-arrow-left text-lg"></i> Back to Archive
+            </button>
+
+            <div class="flex flex-col lg:flex-row gap-8">
+                <!-- Left Column: Video Player -->
+                <div class="w-full lg:w-7/12 xl:w-2/3 flex flex-col gap-4">
+                    <div class="bg-black rounded-xl overflow-hidden shadow-md aspect-video relative" id="video-player-container">
+                        <!-- Iframe injected here -->
+                    </div>
+                    <div>
+                        <h2 id="detail-title" class="text-2xl font-bold text-gray-900 mb-2">Video Title</h2>
+                        <div class="flex items-center gap-4 text-sm text-gray-600">
+                            <span class="flex items-center gap-1"><i class="ph ph-clock"></i> <span id="detail-duration">00:00</span></span>
+                            <span class="flex items-center gap-1"><i class="ph ph-list-numbers"></i> <span id="detail-qcount">0 Questions</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Questions List -->
+                <div class="w-full lg:w-5/12 xl:w-1/3 flex flex-col h-[600px]">
+                    <div class="bg-white border border-gray-200 rounded-t-xl p-4 border-b-0 flex items-center justify-between">
+                        <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                            <i class="ph-fill ph-check-circle text-edblue-600 text-xl"></i>
+                            Questions & Events
+                        </h3>
+                    </div>
+                    <div class="bg-gray-50 border border-gray-200 rounded-b-xl flex-grow overflow-y-auto p-4 flex flex-col gap-4" id="questions-container">
+                        <!-- Questions injected here by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- State Management ---
+        const state = {
+            videos: [],
+            currentVideo: null
+        };
+
+        // --- DOM Elements ---
+        const views = {
+            upload: document.getElementById('view-upload'),
+            dashboard: document.getElementById('view-dashboard'),
+            detail: document.getElementById('view-detail')
+        };
+        const elements = {
+            fileInput: document.getElementById('file-input'),
+            uploadError: document.getElementById('upload-error'),
+            btnLoadNew: document.getElementById('btn-load-new'),
+            btnBack: document.getElementById('btn-back'),
+            videoGrid: document.getElementById('video-grid'),
+            dashboardStats: document.getElementById('dashboard-stats'),
+            searchInput: document.getElementById('search-input'),
+            noResults: document.getElementById('no-results'),
+            
+            // Detail View Elements
+            playerContainer: document.getElementById('video-player-container'),
+            detailTitle: document.getElementById('detail-title'),
+            detailDuration: document.getElementById('detail-duration'),
+            detailQCount: document.getElementById('detail-qcount'),
+            questionsContainer: document.getElementById('questions-container')
+        };
+
+        // --- Event Listeners ---
+        elements.fileInput.addEventListener('change', handleFileUpload);
+        elements.btnLoadNew.addEventListener('click', () => switchView('upload'));
+        elements.btnBack.addEventListener('click', () => switchView('dashboard'));
+        elements.searchInput.addEventListener('input', (e) => renderDashboard(e.target.value));
+
+        // --- View Switching ---
+        function switchView(viewName) {
+            Object.values(views).forEach(v => v.classList.add('hidden'));
+            views[viewName].classList.remove('hidden');
+            
+            if (viewName === 'upload') {
+                elements.btnLoadNew.classList.add('hidden');
+                elements.fileInput.value = ''; // Reset file input
+            } else {
+                elements.btnLoadNew.classList.remove('hidden');
+            }
+
+            if (viewName === 'detail') {
+                window.scrollTo(0, 0);
+            }
+        }
+
+        // --- File Handling & Parsing ---
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            elements.uploadError.classList.add('hidden');
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const rawData = JSON.parse(e.target.result);
+                    if (!Array.isArray(rawData)) {
+                        throw new Error("Invalid format. Expected an array of videos.");
+                    }
+                    
+                    state.videos = normalizeEdpuzzleData(rawData);
+                    
+                    if (state.videos.length === 0) {
+                        throw new Error("No valid video data found in the file.");
+                    }
+
+                    elements.searchInput.value = ''; // Clear search
+                    renderDashboard();
+                    switchView('dashboard');
+                } catch (err) {
+                    elements.uploadError.textContent = "Error loading file: " + err.message;
+                    elements.uploadError.classList.remove('hidden');
+                }
+            };
+
+            reader.readAsText(file);
+        }
+
+        // --- Data Normalization ---
+        // Edpuzzle JSON is messy. This standardizes it for our app.
+        function normalizeEdpuzzleData(data) {
+            const normalized = [];
+
+            data.forEach(item => {
+                // Determine base object (handles differences between assignments, materials, and media)
+                const base = item.content || (item.medias && item.medias[0]) || item;
+                if (!base) return;
+
+                const title = base.title || item.title || "Untitled Video";
+                
+                // Fix Duration: Use originalVideoDuration if available
+                const duration = base.originalVideoDuration || item.originalVideoDuration || base.duration || item.duration || 0;
+                
+                // Fix YouTube ID: Look for videoId and source==="youtube"
+                let youtubeId = base.youtubeId || item.youtubeId;
+                if (!youtubeId && (base.source === 'youtube' || item.source === 'youtube')) {
+                    youtubeId = base.videoId || item.videoId;
+                }
+                if (!youtubeId) {
+                    youtubeId = extractYouTubeId(base.url || item.url) || null;
+                }
+                
+                // Fallback thumbnail if it's not a YT video
+                let thumbnail = 'https://via.placeholder.com/320x180?text=Video';
+                if (youtubeId) {
+                    thumbnail = `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
+                } else if (base.thumbnailURL || item.thumbnailURL || base.thumbnail || item.thumbnail) {
+                    thumbnail = base.thumbnailURL || item.thumbnailURL || base.thumbnail || item.thumbnail;
+                }
+
+                // FIX LOCALHOST ERRORS: Ensure thumbnails explicitly use https:// to prevent local file:// routing
+                if (thumbnail.startsWith('//')) {
+                    thumbnail = 'https:' + thumbnail;
+                } else if (thumbnail.startsWith('/')) {
+                    thumbnail = 'https://edpuzzle.com' + thumbnail;
+                }
+
+                // Process Questions, Events, and Notes
+                let rawQuestions = base.questions || base.events || item.questions || item.events || [];
+                let rawNotes = base.notes || item.notes || []; // Grab notes from the separate array
+                
+                // Combine them all together to process
+                let allEvents = [...rawQuestions, ...rawNotes];
+                let questions = [];
+
+                allEvents.forEach(q => {
+                    // Extract question body from various possible Edpuzzle formats
+                    let bodyText = "No question text provided.";
+                    
+                    if (q.body && q.body[0]) {
+                        // Check for html first (new format), then text (old format)
+                        if (q.body[0].html && q.body[0].html.trim() !== "") {
+                            bodyText = q.body[0].html;
+                        } else if (q.body[0].text && q.body[0].text.trim() !== "") {
+                            bodyText = q.body[0].text;
+                        }
+                    }
+                    else if (typeof q.body === 'string') bodyText = q.body;
+                    else if (q.html) bodyText = q.html;
+                    else if (q.text) bodyText = q.text;
+
+                    // Only keep actual questions or notes (filter out internal tracking events)
+                    if (q.type === 'multiple-choice' || q.type === 'open-ended' || q.type === 'note' || bodyText !== "No question text provided.") {
+                        
+                        // Standardize choices
+                        let choices = [];
+                        if (q.choices && Array.isArray(q.choices)) {
+                            choices = q.choices.map(c => {
+                                let choiceText = "Option";
+                                if (c.body && c.body[0]) {
+                                    if (c.body[0].html && c.body[0].html.trim() !== "") {
+                                        choiceText = c.body[0].html;
+                                    } else if (c.body[0].text && c.body[0].text.trim() !== "") {
+                                        choiceText = c.body[0].text;
+                                    }
+                                } else if (typeof c.body === 'string') {
+                                    choiceText = c.body;
+                                } else if (c.html) {
+                                    choiceText = c.html;
+                                } else if (c.text) {
+                                    choiceText = c.text;
+                                }
+                                
+                                return {
+                                    text: choiceText,
+                                    isCorrect: c.isCorrect || false
+                                };
+                            });
+                        }
+
+                        questions.push({
+                            id: q._id || Math.random().toString(),
+                            time: q.time || 0,
+                            type: q.type || (choices.length > 0 ? 'multiple-choice' : 'open-ended'),
+                            body: bodyText,
+                            choices: choices
+                        });
+                    }
+                });
+
+                // Sort questions chronologically
+                questions.sort((a, b) => a.time - b.time);
+
+                normalized.push({
+                    id: item._id || Math.random().toString(36).substr(2, 9),
+                    title: title,
+                    duration: duration,
+                    youtubeId: youtubeId,
+                    thumbnail: thumbnail,
+                    questions: questions
+                });
+            });
+
+            return normalized;
+        }
+
+        // Helper to pull YT id from a raw URL if needed
+        function extractYouTubeId(url) {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        // Format seconds to MM:SS
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // --- Rendering ---
+        function renderDashboard(searchTerm = '') {
+            elements.videoGrid.innerHTML = '';
+            
+            const lowerTerm = searchTerm.toLowerCase();
+            const filteredVideos = state.videos.filter(v => v.title.toLowerCase().includes(lowerTerm));
+
+            elements.dashboardStats.textContent = `${filteredVideos.length} videos found`;
+
+            if (filteredVideos.length === 0) {
+                elements.noResults.classList.remove('hidden');
+            } else {
+                elements.noResults.classList.add('hidden');
+                
+                filteredVideos.forEach(video => {
+                    const card = document.createElement('div');
+                    card.className = "bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer group flex flex-col h-full";
+                    card.onclick = () => openVideoDetail(video.id);
+                    
+                    card.innerHTML = `
+                        <div class="relative aspect-video overflow-hidden bg-gray-100">
+                            <img src="${video.thumbnail}" alt="Thumbnail" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                            <div class="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-semibold px-2 py-1 rounded backdrop-blur-sm">
+                                ${formatTime(video.duration)}
+                            </div>
+                        </div>
+                        <div class="p-4 flex flex-col flex-grow">
+                            <h3 class="font-semibold text-gray-900 leading-snug line-clamp-2 mb-3 group-hover:text-edblue-600 transition-colors">${video.title}</h3>
+                            <div class="mt-auto flex items-center justify-between text-sm">
+                                <span class="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-medium">
+                                    <i class="ph-fill ph-question text-edblue-500"></i> ${video.questions.length} Questions
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                    elements.videoGrid.appendChild(card);
+                });
+            }
+        }
+
+        function openVideoDetail(videoId) {
+            const video = state.videos.find(v => v.id === videoId);
+            if (!video) return;
+            
+            state.currentVideo = video;
+            
+            // Populate Header info
+            elements.detailTitle.textContent = video.title;
+            elements.detailDuration.textContent = formatTime(video.duration);
+            elements.detailQCount.textContent = `${video.questions.length} Questions`;
+
+            // Setup Video Player (YouTube or Fallback)
+            if (video.youtubeId) {
+                elements.playerContainer.innerHTML = `
+                    <iframe class="w-full h-full absolute inset-0" 
+                        src="https://www.youtube-nocookie.com/embed/${video.youtubeId}?rel=0&modestbranding=1&origin=https://edpuzzle.com" 
+                        frameborder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                        allowfullscreen>
+                    </iframe>`;
+            } else {
+                elements.playerContainer.innerHTML = `
+                    <div class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center">
+                        <i class="ph ph-video-camera-slash text-5xl mb-4 text-gray-500"></i>
+                        <h3 class="text-xl font-bold mb-2">Video Unavailable</h3>
+                        <p class="text-gray-400 max-w-sm">This video is not hosted on YouTube or the source link could not be extracted. However, your questions and timestamps below are safely preserved.</p>
+                    </div>`;
+            }
+
+            // Render Questions
+            elements.questionsContainer.innerHTML = '';
+            
+            if (video.questions.length === 0) {
+                elements.questionsContainer.innerHTML = `
+                    <div class="text-center py-10 text-gray-500">
+                        <i class="ph ph-ghost text-4xl mb-2 text-gray-300"></i>
+                        <p>No questions found in this video.</p>
+                    </div>`;
+            } else {
+                video.questions.forEach((q, index) => {
+                    const qDiv = document.createElement('div');
+                    qDiv.className = "bg-white p-4 rounded-lg border border-gray-200 shadow-sm";
+                    
+                    // Question Header (Type & Time)
+                    let icon = 'ph-question';
+                    let typeLabel = 'Question';
+                    if (q.type === 'multiple-choice') { icon = 'ph-list-bullets'; typeLabel = 'Multiple Choice'; }
+                    else if (q.type === 'open-ended') { icon = 'ph-text-align-left'; typeLabel = 'Open Ended'; }
+                    else if (q.type === 'note') { icon = 'ph-note'; typeLabel = 'Note'; }
+
+                    let html = `
+                        <div class="flex justify-between items-center mb-3 pb-2 border-b border-gray-100">
+                            <span class="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1">
+                                <i class="ph ${icon} text-lg"></i> ${typeLabel}
+                            </span>
+                            <span class="bg-edblue-50 text-edblue-700 font-mono text-xs font-bold px-2 py-1 rounded">
+                                @ ${formatTime(q.time)}
+                            </span>
+                        </div>
+                        <div class="edpuzzle-richtext text-gray-800 text-sm mb-4 leading-relaxed font-medium">
+                            ${q.body}
+                        </div>
+                    `;
+
+                    // Render Choices for Multiple Choice
+                    if (q.choices && q.choices.length > 0) {
+                        html += `<div class="space-y-2 mt-3">`;
+                        q.choices.forEach(choice => {
+                            const isCorrect = choice.isCorrect;
+                            const bgClass = isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-700';
+                            const iconClass = isCorrect ? '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i>' : '<i class="ph-bold ph-circle text-gray-300 text-lg"></i>';
+                            
+                            html += `
+                                <div class="flex items-start gap-3 p-2.5 rounded border ${bgClass} text-sm">
+                                    <div class="mt-0.5">${iconClass}</div>
+                                    <div class="edpuzzle-richtext flex-grow">${choice.text}</div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
+                    }
+
+                    qDiv.innerHTML = html;
+                    elements.questionsContainer.appendChild(qDiv);
+                });
+            }
+
+            switchView('detail');
+        }
+    </script>
+</body>
+</html>
