@@ -135,7 +135,6 @@
     </main>
 
     <script>
-        // PERSISTENCE & DATA MANAGEMENT
         const state = {
             videos: JSON.parse(localStorage.getItem('ed_archive_videos')) || [],
             currentVideoId: null,
@@ -151,7 +150,6 @@
             btnBack: document.getElementById('btn-back'),
             btnEditMode: document.getElementById('btn-edit-mode'),
             videoGrid: document.getElementById('video-grid'),
-            dashboardStats: document.getElementById('dashboard-stats'),
             searchInput: document.getElementById('search-input'),
             noResults: document.getElementById('no-results'),
             playerContainer: document.getElementById('video-player-container'),
@@ -166,7 +164,6 @@
             folderChips: document.getElementById('folder-chips')
         };
 
-        // UI Initialization
         function init() {
             if (state.videos.length > 0) {
                 renderDashboard();
@@ -195,12 +192,9 @@
                 try {
                     const rawData = JSON.parse(e.target.result);
                     const incoming = normalizeEdpuzzleData(Array.isArray(rawData) ? rawData : [rawData]);
-                    
-                    // Merge logic: avoid duplicates by ID
                     const existingIds = new Set(state.videos.map(v => v.id));
                     const newVideos = incoming.filter(v => !existingIds.has(v.id));
                     state.videos = [...state.videos, ...newVideos];
-                    
                     saveState();
                     renderDashboard();
                     switchView('dashboard');
@@ -223,18 +217,31 @@
                     youtubeId = (match && match[2].length === 11) ? match[2] : null;
                 }
 
+                // Combine questions and notes
                 const rawQ = base.questions || base.events || item.questions || item.events || [];
-                const questions = rawQ.map((q, qIdx) => ({
-                    id: q._id || `q-${qIdx}`,
-                    time: q.time || 0,
-                    type: q.type || 'multiple-choice',
-                    body: (q.body || []).map(b => b.html || b.text || "").join("") || q.html || q.text || "",
-                    choices: (q.choices || []).map((c, cIdx) => ({
-                        id: c._id || `c-${cIdx}`,
-                        text: (c.body || []).map(b => b.html || b.text || "").join("") || c.html || c.text || "Choice",
-                        isCorrect: c.isCorrect === true || c.isCorrect === "true"
-                    }))
-                })).sort((a, b) => a.time - b.time);
+                const rawN = base.notes || item.notes || [];
+                
+                const questions = [...rawQ, ...rawN].map((q, qIdx) => {
+                    // Extract audio URL from various possible locations
+                    let audioURL = q.audioURL || (q.audio && q.audio.audioURL) || null;
+                    if (!audioURL && q.body) {
+                        const audioPart = q.body.find(b => b.audio && b.audio.audioURL);
+                        if (audioPart) audioURL = audioPart.audio.audioURL;
+                    }
+
+                    return {
+                        id: q._id || `q-${qIdx}`,
+                        time: q.time || 0,
+                        type: q.type || 'multiple-choice',
+                        body: (q.body || []).map(b => b.html || b.text || "").join("") || q.html || q.text || "",
+                        audioURL: audioURL,
+                        choices: (q.choices || []).map((c, cIdx) => ({
+                            id: c._id || `c-${cIdx}`,
+                            text: (c.body || []).map(b => b.html || b.text || "").join("") || c.html || c.text || "Choice",
+                            isCorrect: c.isCorrect === true || c.isCorrect === "true"
+                        }))
+                    };
+                }).sort((a, b) => a.time - b.time);
 
                 return {
                     id,
@@ -250,14 +257,11 @@
 
         function renderDashboard(searchTerm = '') {
             elements.videoGrid.innerHTML = '';
-            
-            // Filter by search and tags
             let filtered = state.videos.filter(v => v.title.toLowerCase().includes(searchTerm.toLowerCase()));
             if (state.activeFolder !== 'All') {
                 filtered = filtered.filter(v => v.tags.includes(state.activeFolder));
             }
 
-            // Render Folder Chips
             const allTags = [...new Set(state.videos.flatMap(v => v.tags))];
             elements.folderChips.innerHTML = `<button onclick="setFolder('All')" class="px-3 py-1 rounded-full text-xs font-bold transition-all ${state.activeFolder === 'All' ? 'bg-edblue-600 text-white' : 'bg-white border text-gray-500'}">All</button>`;
             allTags.forEach(tag => {
@@ -309,8 +313,6 @@
 
         function renderDetailUI() {
             const video = state.videos.find(v => v.id === state.currentVideoId);
-            
-            // Tags
             elements.detailTagsArea.innerHTML = video.tags.map(t => `
                 <div class="flex items-center gap-1 bg-edblue-50 text-edblue-700 px-3 py-1 rounded-full text-xs font-bold">
                     ${t}
@@ -323,7 +325,6 @@
             elements.btnEditMode.classList.toggle('bg-green-600', state.editing);
             elements.btnEditMode.classList.toggle('text-white', state.editing);
 
-            // Questions
             elements.questionsContainer.innerHTML = '';
             video.questions.forEach((q, qIdx) => {
                 const qDiv = document.createElement('div');
@@ -335,23 +336,23 @@
                     q.choices.forEach((c, cIdx) => {
                         const style = c.isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-gray-100 text-gray-500';
                         const icon = c.isCorrect ? 'ph-fill ph-check-circle text-green-500' : 'ph ph-circle text-gray-200';
-                        
-                        choicesHtml += `
-                            <div onclick="${state.editing ? `toggleCorrect(${qIdx}, ${cIdx})` : ''}" 
-                                 class="flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${style} ${state.editing ? 'hover:border-edblue-300' : ''}">
-                                <i class="${icon} text-base"></i>
-                                <span>${c.text}</span>
-                            </div>`;
+                        choicesHtml += `<div onclick="${state.editing ? `toggleCorrect(${qIdx}, ${cIdx})` : ''}" class="flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${style} ${state.editing ? 'hover:border-edblue-300' : ''}"><i class="${icon} text-base"></i><span>${c.text}</span></div>`;
                     });
                     choicesHtml += `</div>`;
                 }
 
+                // Identify Icon by Type
+                let typeIcon = 'ph-question';
+                if (q.type === 'note') typeIcon = 'ph-note-blank';
+                if (q.audioURL) typeIcon = 'ph-microphone';
+
                 qDiv.innerHTML = `
                     <div class="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                        <span>${q.type}</span>
+                        <span class="flex items-center gap-1"><i class="ph ${typeIcon}"></i> ${q.type}</span>
                         <span class="text-edblue-500">${formatTime(q.time)}</span>
                     </div>
-                    <div class="edpuzzle-richtext text-sm text-gray-700">${q.body}</div>
+                    <div class="edpuzzle-richtext text-sm text-gray-700">${q.body || (q.audioURL && !q.body ? '<span class="italic text-gray-400">Audio Note</span>' : '')}</div>
+                    ${q.audioURL ? `<div class="mt-2"><audio controls class="w-full h-8"><source src="${q.audioURL}" type="audio/mpeg"></audio></div>` : ''}
                     ${choicesHtml}
                 `;
                 elements.questionsContainer.appendChild(qDiv);
@@ -366,8 +367,6 @@
 
         function toggleCorrect(qIdx, cIdx) {
             const video = state.videos.find(v => v.id === state.currentVideoId);
-            // Multiple choice behavior: toggle current, uncheck others if you want single-choice, 
-            // but Edpuzzle supports multi-correct, so we just toggle.
             video.questions[qIdx].choices[cIdx].isCorrect = !video.questions[qIdx].choices[cIdx].isCorrect;
             renderDetailUI();
         }
