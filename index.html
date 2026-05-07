@@ -38,12 +38,16 @@
         .edpuzzle-richtext p { margin-bottom: 0.5rem; }
         .edpuzzle-richtext p:last-child { margin-bottom: 0; }
 
-        /* Export button flash animation */
-        @keyframes exportFlash {
-            0%   { background-color: #16a34a; } /* green-600 */
-            100% { background-color: #0058FF; } /* edblue-600 */
-        }
-        .export-flash { animation: exportFlash 0.8s ease forwards; }
+        /* Modal backdrop fade */
+        @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        #export-modal { animation: fadeIn 0.18s ease; }
+        #export-modal-panel { animation: slideUp 0.22s cubic-bezier(0.34,1.56,0.64,1); }
+
+        /* JSON textarea scrollbar */
+        #json-output::-webkit-scrollbar { width: 6px; }
+        #json-output::-webkit-scrollbar-track { background: #1e293b; border-radius: 3px; }
+        #json-output::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
@@ -162,6 +166,58 @@
 
     </main>
 
+    <!-- Export JSON Modal -->
+    <div id="export-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+        <!-- Backdrop -->
+        <div id="export-backdrop" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+
+        <!-- Panel -->
+        <div id="export-modal-panel" class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden" style="max-height: 85vh;">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <div class="flex items-center gap-2.5">
+                    <div class="bg-edblue-50 text-edblue-600 p-1.5 rounded-lg">
+                        <i class="ph-fill ph-brackets-curly text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-900 text-sm leading-tight">Export JSON</h3>
+                        <p id="modal-subtitle" class="text-xs text-gray-500 leading-tight mt-0.5 max-w-xs truncate"></p>
+                    </div>
+                </div>
+                <button id="modal-close" class="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded-lg hover:bg-gray-100">
+                    <i class="ph ph-x text-xl"></i>
+                </button>
+            </div>
+
+            <!-- JSON Output -->
+            <div class="relative flex-grow overflow-hidden bg-gray-900 mx-4 my-3 rounded-xl">
+                <textarea id="json-output" readonly spellcheck="false"
+                    class="w-full h-full min-h-64 bg-transparent text-green-300 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed"
+                    style="font-family: 'Menlo', 'Consolas', 'Monaco', monospace; height: 320px;">
+                </textarea>
+                <span id="line-count" class="absolute top-2.5 right-3 text-xs text-gray-500 font-mono pointer-events-none select-none"></span>
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="flex items-center justify-between px-4 pb-4 pt-1 gap-3">
+                <span class="text-xs text-gray-400 flex items-center gap-1">
+                    <i class="ph ph-info text-sm"></i>
+                    Paste this into your Edpuzzle import window
+                </span>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <button id="btn-download" class="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400 px-3 py-2 rounded-lg transition-colors">
+                        <i class="ph ph-download-simple text-base"></i> Download
+                    </button>
+                    <button id="btn-copy" class="flex items-center gap-1.5 text-sm font-semibold text-white bg-edblue-600 hover:bg-edblue-700 px-4 py-2 rounded-lg transition-colors shadow-sm">
+                        <i class="ph ph-copy text-base" id="copy-icon"></i>
+                        <span id="copy-label">Copy JSON</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // --- State Management ---
         const state = {
@@ -200,7 +256,14 @@
         elements.btnLoadNew.addEventListener('click', () => switchView('upload'));
         elements.btnBack.addEventListener('click', () => switchView('dashboard'));
         elements.searchInput.addEventListener('input', (e) => renderDashboard(e.target.value));
-        elements.btnExport.addEventListener('click', exportCurrentVideo);
+        elements.btnExport.addEventListener('click', openExportModal);
+
+        // Modal wiring
+        document.getElementById('modal-close').addEventListener('click', closeExportModal);
+        document.getElementById('export-backdrop').addEventListener('click', closeExportModal);
+        document.getElementById('btn-copy').addEventListener('click', copyJSON);
+        document.getElementById('btn-download').addEventListener('click', downloadJSON);
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeExportModal(); });
 
         // --- View Switching ---
         function switchView(viewName) {
@@ -254,29 +317,68 @@
             reader.readAsText(file);
         }
 
-        // --- Export Current Video ---
-        // Downloads the original raw JSON for the currently viewed video as a single-item array,
-        // which matches the format your Edpuzzle clone expects for individual imports.
-        function exportCurrentVideo() {
+        // --- Export Modal ---
+        let _exportJSON = '';
+
+        function openExportModal() {
             if (!state.currentVideo) return;
-
             const raw = state.rawMap[state.currentVideo.id];
-            if (!raw) {
-                alert("Original raw data not found for this video.");
-                return;
-            }
+            if (!raw) { alert("Original raw data not found for this video."); return; }
 
-            // Wrap in an array to match the standard export format
-            const exportData = JSON.stringify([raw], null, 2);
-            const blob = new Blob([exportData], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            _exportJSON = JSON.stringify([raw], null, 2);
 
-            // Sanitize title for use as a filename
+            const textarea = document.getElementById('json-output');
+            textarea.value = _exportJSON;
+
+            const lines = _exportJSON.split('\n').length;
+            document.getElementById('line-count').textContent = `${lines} lines`;
+            document.getElementById('modal-subtitle').textContent = state.currentVideo.title;
+
+            // Reset copy button
+            document.getElementById('copy-label').textContent = 'Copy JSON';
+            document.getElementById('copy-icon').className = 'ph ph-copy text-base';
+            document.getElementById('btn-copy').classList.remove('bg-green-600', 'hover:bg-green-700');
+            document.getElementById('btn-copy').classList.add('bg-edblue-600', 'hover:bg-edblue-700');
+
+            document.getElementById('export-modal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Auto-select all text for easy manual copy
+            setTimeout(() => { textarea.select(); }, 50);
+        }
+
+        function closeExportModal() {
+            document.getElementById('export-modal').classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+
+        function copyJSON() {
+            if (!_exportJSON) return;
+            navigator.clipboard.writeText(_exportJSON).then(() => {
+                const btn = document.getElementById('btn-copy');
+                document.getElementById('copy-label').textContent = 'Copied!';
+                document.getElementById('copy-icon').className = 'ph ph-check text-base';
+                btn.classList.remove('bg-edblue-600', 'hover:bg-edblue-700');
+                btn.classList.add('bg-green-600', 'hover:bg-green-700');
+                setTimeout(() => {
+                    document.getElementById('copy-label').textContent = 'Copy JSON';
+                    document.getElementById('copy-icon').className = 'ph ph-copy text-base';
+                    btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    btn.classList.add('bg-edblue-600', 'hover:bg-edblue-700');
+                }, 2000);
+            }).catch(() => {
+                // Fallback for older browsers
+                document.getElementById('json-output').select();
+                document.execCommand('copy');
+            });
+        }
+
+        function downloadJSON() {
+            if (!_exportJSON || !state.currentVideo) return;
             const safeName = state.currentVideo.title
-                .replace(/[^\w\s-]/g, '')   // strip special chars
-                .replace(/\s+/g, '_')        // spaces to underscores
-                .substring(0, 60);           // cap length
-
+                .replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').substring(0, 60);
+            const blob = new Blob([_exportJSON], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = `${safeName}.json`;
@@ -284,16 +386,6 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-
-            // Brief visual confirmation on the button
-            const btn = elements.btnExport;
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="ph ph-check text-lg"></i> Exported!';
-            btn.classList.add('export-flash');
-            setTimeout(() => {
-                btn.innerHTML = originalHTML;
-                btn.classList.remove('export-flash');
-            }, 1800);
         }
 
         // --- Data Normalization ---
