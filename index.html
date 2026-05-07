@@ -37,6 +37,13 @@
         .edpuzzle-richtext img { max-width: 100%; height: auto; border-radius: 0.375rem; margin-top: 0.5rem; }
         .edpuzzle-richtext p { margin-bottom: 0.5rem; }
         .edpuzzle-richtext p:last-child { margin-bottom: 0; }
+
+        /* Export button flash animation */
+        @keyframes exportFlash {
+            0%   { background-color: #16a34a; } /* green-600 */
+            100% { background-color: #0058FF; } /* edblue-600 */
+        }
+        .export-flash { animation: exportFlash 0.8s ease forwards; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
@@ -111,9 +118,17 @@
 
         <!-- VIEW 3: Video Detail View -->
         <div id="view-detail" class="hidden flex-grow flex-col max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-            <button id="btn-back" class="w-max flex items-center gap-2 text-gray-600 hover:text-edblue-600 font-medium mb-6 transition-colors">
-                <i class="ph ph-arrow-left text-lg"></i> Back to Archive
-            </button>
+            <!-- Back button + Export button row -->
+            <div class="flex items-center justify-between mb-6">
+                <button id="btn-back" class="flex items-center gap-2 text-gray-600 hover:text-edblue-600 font-medium transition-colors">
+                    <i class="ph ph-arrow-left text-lg"></i> Back to Archive
+                </button>
+
+                <button id="btn-export" class="flex items-center gap-2 bg-edblue-600 hover:bg-edblue-700 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors shadow-sm">
+                    <i class="ph ph-download-simple text-lg"></i>
+                    Export Video JSON
+                </button>
+            </div>
 
             <div class="flex flex-col lg:flex-row gap-8">
                 <!-- Left Column: Video Player -->
@@ -150,7 +165,8 @@
     <script>
         // --- State Management ---
         const state = {
-            videos: [],
+            videos: [],       // normalized video objects
+            rawMap: {},       // map of normalized id -> original raw JSON item
             currentVideo: null
         };
 
@@ -165,6 +181,7 @@
             uploadError: document.getElementById('upload-error'),
             btnLoadNew: document.getElementById('btn-load-new'),
             btnBack: document.getElementById('btn-back'),
+            btnExport: document.getElementById('btn-export'),
             videoGrid: document.getElementById('video-grid'),
             dashboardStats: document.getElementById('dashboard-stats'),
             searchInput: document.getElementById('search-input'),
@@ -183,6 +200,7 @@
         elements.btnLoadNew.addEventListener('click', () => switchView('upload'));
         elements.btnBack.addEventListener('click', () => switchView('dashboard'));
         elements.searchInput.addEventListener('input', (e) => renderDashboard(e.target.value));
+        elements.btnExport.addEventListener('click', exportCurrentVideo);
 
         // --- View Switching ---
         function switchView(viewName) {
@@ -216,7 +234,9 @@
                         throw new Error("Invalid format. Expected an array of videos.");
                     }
                     
-                    state.videos = normalizeEdpuzzleData(rawData);
+                    const result = normalizeEdpuzzleData(rawData);
+                    state.videos = result.videos;
+                    state.rawMap = result.rawMap;
                     
                     if (state.videos.length === 0) {
                         throw new Error("No valid video data found in the file.");
@@ -234,10 +254,53 @@
             reader.readAsText(file);
         }
 
+        // --- Export Current Video ---
+        // Downloads the original raw JSON for the currently viewed video as a single-item array,
+        // which matches the format your Edpuzzle clone expects for individual imports.
+        function exportCurrentVideo() {
+            if (!state.currentVideo) return;
+
+            const raw = state.rawMap[state.currentVideo.id];
+            if (!raw) {
+                alert("Original raw data not found for this video.");
+                return;
+            }
+
+            // Wrap in an array to match the standard export format
+            const exportData = JSON.stringify([raw], null, 2);
+            const blob = new Blob([exportData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            // Sanitize title for use as a filename
+            const safeName = state.currentVideo.title
+                .replace(/[^\w\s-]/g, '')   // strip special chars
+                .replace(/\s+/g, '_')        // spaces to underscores
+                .substring(0, 60);           // cap length
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${safeName}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            // Brief visual confirmation on the button
+            const btn = elements.btnExport;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="ph ph-check text-lg"></i> Exported!';
+            btn.classList.add('export-flash');
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.remove('export-flash');
+            }, 1800);
+        }
+
         // --- Data Normalization ---
-        // Edpuzzle JSON is messy. This standardizes it for our app.
+        // Returns { videos: [...], rawMap: { id: rawItem } }
         function normalizeEdpuzzleData(data) {
-            const normalized = [];
+            const videos = [];
+            const rawMap = {};
 
             data.forEach(item => {
                 // Determine base object (handles differences between assignments, materials, and media)
@@ -339,17 +402,23 @@
                 // Sort questions chronologically
                 questions.sort((a, b) => a.time - b.time);
 
-                normalized.push({
-                    id: item._id || Math.random().toString(36).substr(2, 9),
+                // Generate a stable ID for mapping
+                const normalizedId = item._id || Math.random().toString(36).substr(2, 9);
+
+                videos.push({
+                    id: normalizedId,
                     title: title,
                     duration: duration,
                     youtubeId: youtubeId,
                     thumbnail: thumbnail,
                     questions: questions
                 });
+
+                // Store the original raw item keyed by the same ID for later export
+                rawMap[normalizedId] = item;
             });
 
-            return normalized;
+            return { videos, rawMap };
         }
 
         // Helper to pull YT id from a raw URL if needed
