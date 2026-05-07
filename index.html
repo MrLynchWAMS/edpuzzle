@@ -23,8 +23,9 @@
         ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
         .edpuzzle-richtext img { max-width: 100%; height: auto; border-radius: 0.375rem; margin-top: 0.5rem; }
-        .view-transition { animation: fadeIn 0.3s ease-out; }
+        .view-transition { animation: fadeIn 0.2s ease-out; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .selected-card { outline: 3px solid #0058FF; outline-offset: 2px; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
@@ -32,7 +33,7 @@
     <nav class="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 cursor-pointer" onclick="switchView('dashboard')">
                     <div class="bg-edblue-600 text-white p-1.5 rounded-lg">
                         <i class="ph-fill ph-puzzle-piece text-2xl"></i>
                     </div>
@@ -49,6 +50,21 @@
             </div>
         </div>
     </nav>
+
+    <!-- Bulk Actions Toolbar (Hidden by default) -->
+    <div id="bulk-toolbar" class="hidden sticky top-16 z-40 bg-edblue-600 text-white shadow-lg animate-bounce-in">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <span id="selection-count" class="font-bold bg-white text-edblue-600 px-2 py-0.5 rounded-md text-sm">0 Selected</span>
+                <button onclick="clearSelection()" class="text-sm hover:underline">Clear</button>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="text" id="bulk-tag-input" placeholder="New tag..." class="text-gray-900 text-xs px-3 py-1.5 rounded-lg outline-none focus:ring-2 focus:ring-white">
+                <button onclick="applyBulkTag()" class="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">Apply Tag</button>
+                <button onclick="bulkDelete()" class="bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">Delete Selected</button>
+            </div>
+        </div>
+    </div>
 
     <main class="flex-grow flex flex-col" id="app-container">
         <!-- VIEW 1: Upload -->
@@ -73,7 +89,7 @@
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
                 <div>
                     <h1 class="text-3xl font-black text-gray-900 tracking-tight">Lesson Library</h1>
-                    <div class="flex gap-2 mt-2" id="folder-chips"></div>
+                    <div class="flex gap-2 mt-3" id="folder-chips"></div>
                 </div>
                 <div class="flex gap-3 w-full md:w-auto">
                     <div class="relative flex-grow md:w-80">
@@ -98,35 +114,36 @@
                 </button>
                 <div class="flex items-center gap-3">
                     <span id="save-indicator" class="text-xs font-bold text-green-600 opacity-0 transition-opacity">Saved to Browser</span>
+                    <button id="btn-info-modal" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                        <i class="ph ph-info text-xl"></i>
+                    </button>
                     <button id="btn-edit-mode" class="flex items-center gap-2 bg-gray-100 hover:bg-edblue-600 hover:text-white text-gray-700 px-4 py-2 rounded-xl text-sm font-bold transition-all">
-                        <i class="ph ph-pencil-simple"></i> Edit Answers & Tags
+                        <i class="ph ph-pencil-simple"></i> Edit Mode
                     </button>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <!-- Left -->
+                <!-- Left: Video & Meta -->
                 <div class="lg:col-span-7 xl:col-span-8 space-y-6">
                     <div class="bg-black rounded-3xl overflow-hidden shadow-2xl aspect-video relative" id="video-player-container"></div>
                     <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-                        <div class="flex justify-between items-start">
-                            <h2 id="detail-title" class="text-2xl font-black text-gray-900 leading-tight"></h2>
-                        </div>
+                        <h2 id="detail-title" class="text-2xl font-black text-gray-900 leading-tight"></h2>
                         <div class="flex flex-wrap gap-2" id="detail-tags-area"></div>
-                        <div id="tag-editor" class="hidden flex gap-2">
-                            <input type="text" id="new-tag-input" placeholder="Add tag (e.g. Physics, Grade 10)..." class="flex-grow text-sm border rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-edblue-500">
+                        <div id="tag-editor" class="hidden flex gap-2 pt-2 border-t">
+                            <input type="text" id="new-tag-input" placeholder="New tag..." class="flex-grow text-sm border rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-edblue-500">
                             <button id="btn-add-tag" class="bg-edblue-600 text-white px-4 py-2 rounded-lg text-sm font-bold">Add</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Right -->
+                <!-- Right: Content List -->
                 <div class="lg:col-span-5 xl:col-span-4 flex flex-col h-[700px] bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
-                    <div class="p-5 border-b flex justify-between items-center">
+                    <div class="p-5 border-b flex justify-between items-center bg-gray-50/50">
                         <h3 class="font-black text-gray-800 flex items-center gap-2">
                             <i class="ph ph-list-numbers text-edblue-600"></i> Lesson Flow
                         </h3>
-                        <span id="detail-qcount" class="text-[10px] bg-gray-100 px-2 py-1 rounded-full font-bold text-gray-500"></span>
+                        <span id="detail-qcount" class="text-[10px] bg-gray-200 px-2 py-1 rounded-full font-bold text-gray-500"></span>
                     </div>
                     <div class="flex-grow overflow-y-auto p-5 space-y-4 bg-gray-50" id="questions-container"></div>
                 </div>
@@ -134,21 +151,46 @@
         </div>
     </main>
 
+    <!-- Modal: Video Info -->
+    <div id="info-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
+            <div class="p-6 border-b flex justify-between items-center">
+                <h3 class="text-xl font-black">Video Data Details</h3>
+                <button onclick="closeInfoModal()" class="p-2 hover:bg-gray-100 rounded-full"><i class="ph ph-x text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-6">
+                <div>
+                    <label class="block text-xs font-black text-gray-400 uppercase mb-2">Video URL</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="modal-url-input" readonly class="flex-grow bg-gray-50 border rounded-xl px-4 py-2 text-sm outline-none">
+                        <button onclick="copyToClipboard('modal-url-input')" class="bg-edblue-600 text-white px-4 py-2 rounded-xl text-sm font-bold">Copy</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-black text-gray-400 uppercase mb-2">Source JSON (Raw Data)</label>
+                    <textarea id="modal-json-area" readonly class="w-full h-48 bg-gray-900 text-green-400 font-mono text-xs p-4 rounded-xl resize-none outline-none"></textarea>
+                    <button onclick="copyToClipboard('modal-json-area')" class="mt-2 w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl text-sm font-bold transition-colors">Copy JSON Payload</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const state = {
             videos: JSON.parse(localStorage.getItem('ed_archive_videos')) || [],
             currentVideoId: null,
             editing: false,
-            activeFolder: 'All'
+            activeFolder: 'All',
+            selection: new Set()
         };
 
         const elements = {
             fileInput: document.getElementById('file-input'),
-            uploadError: document.getElementById('upload-error'),
             btnLoadNew: document.getElementById('btn-load-new'),
             btnExportAll: document.getElementById('btn-export-all'),
             btnBack: document.getElementById('btn-back'),
             btnEditMode: document.getElementById('btn-edit-mode'),
+            btnInfoModal: document.getElementById('btn-info-modal'),
             videoGrid: document.getElementById('video-grid'),
             searchInput: document.getElementById('search-input'),
             noResults: document.getElementById('no-results'),
@@ -161,7 +203,9 @@
             newTagInput: document.getElementById('new-tag-input'),
             btnAddTag: document.getElementById('btn-add-tag'),
             saveIndicator: document.getElementById('save-indicator'),
-            folderChips: document.getElementById('folder-chips')
+            folderChips: document.getElementById('folder-chips'),
+            bulkToolbar: document.getElementById('bulk-toolbar'),
+            selectionCount: document.getElementById('selection-count')
         };
 
         function init() {
@@ -174,6 +218,7 @@
             elements.btnBack.addEventListener('click', () => switchView('dashboard'));
             elements.searchInput.addEventListener('input', (e) => renderDashboard(e.target.value));
             elements.btnEditMode.addEventListener('click', toggleEditMode);
+            elements.btnInfoModal.addEventListener('click', openInfoModal);
             elements.btnAddTag.addEventListener('click', addTag);
             elements.btnExportAll.addEventListener('click', exportFullData);
         }
@@ -191,7 +236,7 @@
             reader.onload = (e) => {
                 try {
                     const rawData = JSON.parse(e.target.result);
-                    const incoming = normalizeEdpuzzleData(Array.isArray(rawData) ? rawData : [rawData]);
+                    const incoming = normalizeEdpuzzleData(Array.isArray(rawData) ? rawData : [rawData], rawData);
                     const existingIds = new Set(state.videos.map(v => v.id));
                     const newVideos = incoming.filter(v => !existingIds.has(v.id));
                     state.videos = [...state.videos, ...newVideos];
@@ -199,15 +244,14 @@
                     renderDashboard();
                     switchView('dashboard');
                 } catch (err) {
-                    elements.uploadError.textContent = "Error: " + err.message;
-                    elements.uploadError.classList.remove('hidden');
+                    alert("Error parsing JSON: " + err.message);
                 }
             };
             reader.readAsText(file);
         }
 
-        function normalizeEdpuzzleData(data) {
-            return data.map(item => {
+        function normalizeEdpuzzleData(data, rawOriginal) {
+            return data.map((item, idx) => {
                 const base = item.content || (item.medias && item.medias[0]) || item;
                 const id = item._id || base._id || Math.random().toString(36).substr(2, 9);
                 
@@ -217,14 +261,13 @@
                     youtubeId = (match && match[2].length === 11) ? match[2] : null;
                 }
 
-                // Combine questions and notes
+                // Gather Questions + Notes + Events
                 const rawQ = base.questions || base.events || item.questions || item.events || [];
                 const rawN = base.notes || item.notes || [];
                 
                 const questions = [...rawQ, ...rawN].map((q, qIdx) => {
-                    // Extract audio URL from various possible locations
                     let audioURL = q.audioURL || (q.audio && q.audio.audioURL) || null;
-                    if (!audioURL && q.body) {
+                    if (!audioURL && q.body && Array.isArray(q.body)) {
                         const audioPart = q.body.find(b => b.audio && b.audio.audioURL);
                         if (audioPart) audioURL = audioPart.audio.audioURL;
                     }
@@ -233,11 +276,11 @@
                         id: q._id || `q-${qIdx}`,
                         time: q.time || 0,
                         type: q.type || 'multiple-choice',
-                        body: (q.body || []).map(b => b.html || b.text || "").join("") || q.html || q.text || "",
+                        body: Array.isArray(q.body) ? q.body.map(b => b.html || b.text || "").join("") : (q.html || q.text || ""),
                         audioURL: audioURL,
                         choices: (q.choices || []).map((c, cIdx) => ({
                             id: c._id || `c-${cIdx}`,
-                            text: (c.body || []).map(b => b.html || b.text || "").join("") || c.html || c.text || "Choice",
+                            text: Array.isArray(c.body) ? c.body.map(b => b.html || b.text || "").join("") : (c.html || c.text || "Choice"),
                             isCorrect: c.isCorrect === true || c.isCorrect === "true"
                         }))
                     };
@@ -250,11 +293,13 @@
                     youtubeId,
                     questions,
                     tags: [],
-                    thumbnail: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg` : 'https://via.placeholder.com/320x180'
+                    thumbnail: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg` : 'https://via.placeholder.com/320x180',
+                    raw: Array.isArray(rawOriginal) ? rawOriginal[idx] : rawOriginal
                 };
             });
         }
 
+        // --- DASHBOARD & SELECTION ---
         function renderDashboard(searchTerm = '') {
             elements.videoGrid.innerHTML = '';
             let filtered = state.videos.filter(v => v.title.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -262,6 +307,7 @@
                 filtered = filtered.filter(v => v.tags.includes(state.activeFolder));
             }
 
+            // Tags / Folders
             const allTags = [...new Set(state.videos.flatMap(v => v.tags))];
             elements.folderChips.innerHTML = `<button onclick="setFolder('All')" class="px-3 py-1 rounded-full text-xs font-bold transition-all ${state.activeFolder === 'All' ? 'bg-edblue-600 text-white' : 'bg-white border text-gray-500'}">All</button>`;
             allTags.forEach(tag => {
@@ -273,12 +319,28 @@
 
             filtered.forEach(video => {
                 const card = document.createElement('div');
-                card.className = "group bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col";
-                card.onclick = () => openVideoDetail(video.id);
+                const isSelected = state.selection.has(video.id);
+                card.className = `group bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col relative ${isSelected ? 'selected-card shadow-lg' : ''}`;
+                
+                card.onclick = (e) => {
+                    if (e.ctrlKey || e.metaKey || state.selection.size > 0) {
+                        toggleSelection(video.id);
+                    } else {
+                        openVideoDetail(video.id);
+                    }
+                };
+
+                // Context Menu / Selection Toggle
+                card.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    toggleSelection(video.id);
+                };
+
                 card.innerHTML = `
                     <div class="relative aspect-video">
                         <img src="${video.thumbnail}" class="w-full h-full object-cover">
-                        <div class="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">${Math.floor(video.duration/60)}m</div>
+                        <div class="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">${formatTime(video.duration)}</div>
+                        ${isSelected ? `<div class="absolute top-2 right-2 bg-edblue-600 text-white rounded-full p-1"><i class="ph-fill ph-check-circle"></i></div>` : ''}
                     </div>
                     <div class="p-4 flex-grow space-y-2">
                         <h3 class="font-bold text-gray-900 line-clamp-2 text-sm leading-snug">${video.title}</h3>
@@ -289,6 +351,24 @@
                 `;
                 elements.videoGrid.appendChild(card);
             });
+            updateBulkToolbar();
+        }
+
+        function toggleSelection(id) {
+            if (state.selection.has(id)) state.selection.delete(id);
+            else state.selection.add(id);
+            renderDashboard(elements.searchInput.value);
+        }
+
+        function clearSelection() {
+            state.selection.clear();
+            renderDashboard();
+        }
+
+        function updateBulkToolbar() {
+            const count = state.selection.size;
+            elements.bulkToolbar.classList.toggle('hidden', count === 0);
+            elements.selectionCount.textContent = `${count} Selected`;
         }
 
         function setFolder(folder) {
@@ -296,16 +376,34 @@
             renderDashboard(elements.searchInput.value);
         }
 
+        function applyBulkTag() {
+            const tag = document.getElementById('bulk-tag-input').value.trim();
+            if (!tag) return;
+            state.videos.forEach(v => {
+                if (state.selection.has(v.id) && !v.tags.includes(tag)) v.tags.push(tag);
+            });
+            document.getElementById('bulk-tag-input').value = '';
+            saveState();
+            clearSelection();
+        }
+
+        function bulkDelete() {
+            if (!confirm(`Are you sure you want to delete ${state.selection.size} videos from your library?`)) return;
+            state.videos = state.videos.filter(v => !state.selection.has(v.id));
+            saveState();
+            clearSelection();
+        }
+
+        // --- DETAIL VIEW ---
         function openVideoDetail(id) {
             state.currentVideoId = id;
             state.editing = false;
             const video = state.videos.find(v => v.id === id);
-            
             elements.detailTitle.textContent = video.title;
             elements.detailQCount.textContent = `${video.questions.length} Items`;
             elements.playerContainer.innerHTML = video.youtubeId 
                 ? `<iframe class="w-full h-full absolute inset-0" src="https://www.youtube-nocookie.com/embed/${video.youtubeId}?rel=0" frameborder="0" allowfullscreen></iframe>`
-                : `<div class="absolute inset-0 flex items-center justify-center bg-gray-900 text-gray-500">Preview Unavailable</div>`;
+                : `<div class="absolute inset-0 flex items-center justify-center bg-gray-900 text-gray-500">Video playback unavailable</div>`;
 
             renderDetailUI();
             switchView('detail');
@@ -318,98 +416,95 @@
                     ${t}
                     ${state.editing ? `<i class="ph ph-x-circle cursor-pointer hover:text-red-500" onclick="removeTag('${t}')"></i>` : ''}
                 </div>
-            `).join('') || '<span class="text-gray-400 text-xs italic">No tags added</span>';
+            `).join('') || '<span class="text-gray-400 text-xs italic">No tags</span>';
 
             elements.tagEditor.classList.toggle('hidden', !state.editing);
-            elements.btnEditMode.innerHTML = state.editing ? '<i class="ph ph-check"></i> Done Editing' : '<i class="ph ph-pencil-simple"></i> Edit Answers & Tags';
-            elements.btnEditMode.classList.toggle('bg-green-600', state.editing);
-            elements.btnEditMode.classList.toggle('text-white', state.editing);
+            elements.btnEditMode.innerHTML = state.editing ? '<i class="ph ph-check"></i> Save' : '<i class="ph ph-pencil-simple"></i> Edit Mode';
+            elements.btnEditMode.className = state.editing 
+                ? "flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all"
+                : "flex items-center gap-2 bg-gray-100 hover:bg-edblue-600 hover:text-white text-gray-700 px-4 py-2 rounded-xl text-sm font-bold transition-all";
 
             elements.questionsContainer.innerHTML = '';
             video.questions.forEach((q, qIdx) => {
                 const qDiv = document.createElement('div');
-                qDiv.className = "bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3";
+                const isNote = q.type === 'note';
+                qDiv.className = `p-4 rounded-xl border shadow-sm space-y-3 ${isNote ? 'bg-amber-50 border-amber-100' : 'bg-white border-gray-200'}`;
                 
                 let choicesHtml = '';
                 if (q.choices.length > 0) {
                     choicesHtml = `<div class="space-y-1.5">`;
                     q.choices.forEach((c, cIdx) => {
-                        const style = c.isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-gray-100 text-gray-500';
-                        const icon = c.isCorrect ? 'ph-fill ph-check-circle text-green-500' : 'ph ph-circle text-gray-200';
-                        choicesHtml += `<div onclick="${state.editing ? `toggleCorrect(${qIdx}, ${cIdx})` : ''}" class="flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${style} ${state.editing ? 'hover:border-edblue-300' : ''}"><i class="${icon} text-base"></i><span>${c.text}</span></div>`;
+                        const style = c.isCorrect ? 'bg-green-100 border-green-300 text-green-900 font-medium' : 'bg-white border-gray-100 text-gray-500';
+                        const icon = c.isCorrect ? 'ph-fill ph-check-circle text-green-600' : 'ph ph-circle text-gray-200';
+                        choicesHtml += `<div onclick="${state.editing ? `toggleCorrect(${qIdx}, ${cIdx})` : ''}" class="flex items-center gap-2 p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${style}"><i class="${icon} text-lg"></i><span>${c.text}</span></div>`;
                     });
                     choicesHtml += `</div>`;
                 }
 
-                // Identify Icon by Type
-                let typeIcon = 'ph-question';
-                if (q.type === 'note') typeIcon = 'ph-note-blank';
-                if (q.audioURL) typeIcon = 'ph-microphone';
-
                 qDiv.innerHTML = `
-                    <div class="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                        <span class="flex items-center gap-1"><i class="ph ${typeIcon}"></i> ${q.type}</span>
-                        <span class="text-edblue-500">${formatTime(q.time)}</span>
+                    <div class="flex justify-between items-center text-[10px] font-black ${isNote ? 'text-amber-600' : 'text-gray-400'} uppercase">
+                        <span class="flex items-center gap-1"><i class="ph ${isNote ? 'ph-note-blank' : 'ph-question'}"></i> ${q.type}</span>
+                        <span>${formatTime(q.time)}</span>
                     </div>
-                    <div class="edpuzzle-richtext text-sm text-gray-700">${q.body || (q.audioURL && !q.body ? '<span class="italic text-gray-400">Audio Note</span>' : '')}</div>
-                    ${q.audioURL ? `<div class="mt-2"><audio controls class="w-full h-8"><source src="${q.audioURL}" type="audio/mpeg"></audio></div>` : ''}
+                    <div class="edpuzzle-richtext text-sm text-gray-800 font-medium">${q.body || (isNote ? '<i>Audio Note</i>' : '')}</div>
+                    ${q.audioURL ? `<div class="mt-2"><audio controls class="w-full h-9"><source src="${q.audioURL}"></audio></div>` : ''}
                     ${choicesHtml}
                 `;
                 elements.questionsContainer.appendChild(qDiv);
             });
         }
 
-        function toggleEditMode() {
-            state.editing = !state.editing;
-            renderDetailUI();
-            if (!state.editing) saveState();
-        }
-
-        function toggleCorrect(qIdx, cIdx) {
+        // --- UTILS ---
+        function toggleEditMode() { state.editing = !state.editing; renderDetailUI(); if (!state.editing) saveState(); }
+        function toggleCorrect(qIdx, cIdx) { 
             const video = state.videos.find(v => v.id === state.currentVideoId);
             video.questions[qIdx].choices[cIdx].isCorrect = !video.questions[qIdx].choices[cIdx].isCorrect;
-            renderDetailUI();
+            renderDetailUI(); 
         }
-
         function addTag() {
             const tag = elements.newTagInput.value.trim();
             if (!tag) return;
             const video = state.videos.find(v => v.id === state.currentVideoId);
-            if (!video.tags.includes(tag)) {
-                video.tags.push(tag);
-                elements.newTagInput.value = '';
-                renderDetailUI();
-            }
+            if (!video.tags.includes(tag)) { video.tags.push(tag); elements.newTagInput.value = ''; renderDetailUI(); }
         }
-
         function removeTag(tag) {
             const video = state.videos.find(v => v.id === state.currentVideoId);
             video.tags = video.tags.filter(t => t !== tag);
             renderDetailUI();
         }
 
-        function exportFullData() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.videos, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", "edpuzzle_archive_updated.json");
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+        // --- MODAL & EXPORT ---
+        function openInfoModal() {
+            const video = state.videos.find(v => v.id === state.currentVideoId);
+            document.getElementById('modal-url-input').value = video.youtubeId ? `https://youtube.com/watch?v=${video.youtubeId}` : 'No URL';
+            document.getElementById('modal-json-area').value = JSON.stringify(video.raw || video, null, 2);
+            document.getElementById('info-modal').classList.remove('hidden');
+        }
+        function closeInfoModal() { document.getElementById('info-modal').classList.add('hidden'); }
+        function copyToClipboard(id) {
+            const el = document.getElementById(id);
+            el.select();
+            document.execCommand('copy');
         }
 
-        function switchView(viewName) {
-            ['view-upload', 'view-dashboard', 'view-detail'].forEach(id => {
-                document.getElementById(id).classList.toggle('hidden', id !== `view-${viewName}`);
-            });
-            elements.btnLoadNew.classList.toggle('hidden', viewName === 'upload');
-            if (viewName === 'detail') window.scrollTo(0, 0);
+        function exportFullData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.videos, null, 2));
+            const a = document.createElement('a');
+            a.href = dataStr;
+            a.download = "edpuzzle_archive.json";
+            a.click();
         }
 
         function formatTime(s) {
             const m = Math.floor(s / 60);
             const sec = Math.floor(s % 60);
             return `${m}:${sec.toString().padStart(2, '0')}`;
+        }
+
+        function switchView(view) {
+            ['view-upload', 'view-dashboard', 'view-detail'].forEach(id => document.getElementById(id).classList.toggle('hidden', id !== `view-${view}`));
+            elements.btnLoadNew.classList.toggle('hidden', view === 'upload');
+            if (view !== 'dashboard') clearSelection();
         }
 
         init();
