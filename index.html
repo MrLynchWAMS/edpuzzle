@@ -181,7 +181,7 @@
                         <i class="ph-fill ph-brackets-curly text-xl"></i>
                     </div>
                     <div>
-                        <h3 class="font-bold text-gray-900 text-sm leading-tight">Export JSON</h3>
+                        <h3 class="font-bold text-gray-900 text-sm leading-tight">Export Video Data</h3>
                         <p id="modal-subtitle" class="text-xs text-gray-500 leading-tight mt-0.5 max-w-xs truncate"></p>
                     </div>
                 </div>
@@ -190,20 +190,40 @@
                 </button>
             </div>
 
-            <!-- JSON Output -->
-            <div class="relative flex-grow overflow-hidden bg-gray-900 mx-4 my-3 rounded-xl">
-                <textarea id="json-output" readonly spellcheck="false"
-                    class="w-full h-full min-h-64 bg-transparent text-green-300 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed"
-                    style="font-family: 'Menlo', 'Consolas', 'Monaco', monospace; height: 320px;">
-                </textarea>
-                <span id="line-count" class="absolute top-2.5 right-3 text-xs text-gray-500 font-mono pointer-events-none select-none"></span>
+            <!-- Modal Content Body -->
+            <div class="overflow-y-auto p-4 flex flex-col gap-4">
+                
+                <!-- Video Link Section -->
+                <div id="modal-link-section" class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Video Source URL</label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="video-link-input" readonly 
+                            class="flex-grow bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-600 focus:outline-none focus:ring-1 focus:ring-edblue-500">
+                        <button id="btn-copy-link" class="flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold text-edblue-600 bg-edblue-50 hover:bg-edblue-100 border border-edblue-100 px-3 py-2 rounded-lg transition-colors">
+                            <i class="ph ph-copy" id="copy-link-icon"></i>
+                            <span id="copy-link-label">Copy Link</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- JSON Section -->
+                <div class="flex flex-col">
+                    <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">JSON Configuration</label>
+                    <div class="relative bg-gray-900 rounded-xl overflow-hidden">
+                        <textarea id="json-output" readonly spellcheck="false"
+                            class="w-full bg-transparent text-green-300 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed"
+                            style="font-family: 'Menlo', 'Consolas', 'Monaco', monospace; height: 300px;">
+                        </textarea>
+                        <span id="line-count" class="absolute top-2.5 right-3 text-xs text-gray-500 font-mono pointer-events-none select-none"></span>
+                    </div>
+                </div>
             </div>
 
             <!-- Footer Actions -->
-            <div class="flex items-center justify-between px-4 pb-4 pt-1 gap-3">
+            <div class="flex items-center justify-between px-4 pb-4 pt-2 gap-3 border-t border-gray-100 mt-2">
                 <span class="text-xs text-gray-400 flex items-center gap-1">
                     <i class="ph ph-info text-sm"></i>
-                    Paste this into your Edpuzzle import window
+                    Exported JSON contains all questions and timestamps
                 </span>
                 <div class="flex items-center gap-2 flex-shrink-0">
                     <button id="btn-download" class="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400 px-3 py-2 rounded-lg transition-colors">
@@ -262,6 +282,7 @@
         document.getElementById('modal-close').addEventListener('click', closeExportModal);
         document.getElementById('export-backdrop').addEventListener('click', closeExportModal);
         document.getElementById('btn-copy').addEventListener('click', copyJSON);
+        document.getElementById('btn-copy-link').addEventListener('click', copyVideoLink);
         document.getElementById('btn-download').addEventListener('click', downloadJSON);
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeExportModal(); });
 
@@ -319,6 +340,7 @@
 
         // --- Export Modal ---
         let _exportJSON = '';
+        let _videoURL = '';
 
         function openExportModal() {
             if (!state.currentVideo) return;
@@ -326,30 +348,61 @@
             if (!raw) { alert("Original raw data not found for this video."); return; }
 
             _exportJSON = JSON.stringify([raw], null, 2);
+            _videoURL = state.currentVideo.youtubeId 
+                ? `https://www.youtube.com/watch?v=${state.currentVideo.youtubeId}`
+                : 'No YouTube URL found';
 
             const textarea = document.getElementById('json-output');
             textarea.value = _exportJSON;
+
+            const linkInput = document.getElementById('video-link-input');
+            linkInput.value = _videoURL;
 
             const lines = _exportJSON.split('\n').length;
             document.getElementById('line-count').textContent = `${lines} lines`;
             document.getElementById('modal-subtitle').textContent = state.currentVideo.title;
 
-            // Reset copy button
+            // Reset copy button (JSON)
             document.getElementById('copy-label').textContent = 'Copy JSON';
             document.getElementById('copy-icon').className = 'ph ph-copy text-base';
             document.getElementById('btn-copy').classList.remove('bg-green-600', 'hover:bg-green-700');
             document.getElementById('btn-copy').classList.add('bg-edblue-600', 'hover:bg-edblue-700');
 
+            // Reset copy button (Link)
+            document.getElementById('copy-link-label').textContent = 'Copy Link';
+            document.getElementById('copy-link-icon').className = 'ph ph-copy';
+            const btnLink = document.getElementById('btn-copy-link');
+            btnLink.classList.remove('bg-green-50', 'text-green-600', 'border-green-200');
+            btnLink.classList.add('bg-edblue-50', 'text-edblue-600', 'border-edblue-100');
+
             document.getElementById('export-modal').classList.remove('hidden');
             document.body.style.overflow = 'hidden';
-
-            // Auto-select all text for easy manual copy
-            setTimeout(() => { textarea.select(); }, 50);
         }
 
         function closeExportModal() {
             document.getElementById('export-modal').classList.add('hidden');
             document.body.style.overflow = '';
+        }
+
+        function copyVideoLink() {
+            if (!_videoURL || _videoURL.startsWith('No')) return;
+            navigator.clipboard.writeText(_videoURL).then(() => {
+                const btn = document.getElementById('btn-copy-link');
+                const label = document.getElementById('copy-link-label');
+                const icon = document.getElementById('copy-link-icon');
+                
+                label.textContent = 'Copied!';
+                icon.className = 'ph ph-check';
+                btn.classList.remove('bg-edblue-50', 'text-edblue-600', 'border-edblue-100');
+                btn.classList.add('bg-green-50', 'text-green-600', 'border-green-200');
+
+                setTimeout(() => {
+                    label.textContent = 'Copy Link';
+                    icon.className = 'ph ph-copy';
+                    btn.classList.remove('bg-green-50', 'text-green-600', 'border-green-200');
+                    btn.classList.add('bg-edblue-50', 'text-edblue-600', 'border-edblue-100');
+                }, 2000);
+            });
         }
 
         function copyJSON() {
